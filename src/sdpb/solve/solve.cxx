@@ -185,7 +185,7 @@ El::BigFloat compute_derivative_Balt_formula(SDP & dsdp, SDP_Solver & solver, co
 	return -dprimalobj_Balt;
 }
 
-int compute_gradient(std::vector<El::BigFloat> & dobj_list, std::vector<SDP*> & dsdp_list, SDP_Solver & solver, const Block_Info &block_info)
+int compute_linear(std::vector<El::BigFloat> & dobj_list, std::vector<SDP*> & dsdp_list, SDP_Solver & solver, const Block_Info &block_info)
 {
 	for (int i = 0; i < dsdp_list.size(); i++)
 	{
@@ -225,7 +225,7 @@ Timers solve(const Block_Info &block_info, const SDP_Solver_Parameters &paramete
                     sdp.dual_objective_b.Height());
 
   std::vector<El::BigFloat> dobj_list;
-  compute_gradient(dobj_list, dsdp_list, solver, block_info);
+  compute_linear(dobj_list, dsdp_list, solver, block_info);
 
   SDP_Solver_Terminate_Reason reason
     = solver.run(parameters, block_info, sdp, dsdp_list, grid, timers);
@@ -240,7 +240,7 @@ Timers solve(const Block_Info &block_info, const SDP_Solver_Parameters &paramete
 
 	  if (parameters.compute_derivative_dBdbdc)
 	  {
-		  std::cout << "[SDPDReturnBegin.Gradient]\n";
+		  std::cout << "[SDPDReturnBegin.Linear]\n";
 		  std::cout << "{\n";
 		  for (int i = 0; i < dobj_list.size(); i++)
 		  {
@@ -248,7 +248,7 @@ Timers solve(const Block_Info &block_info, const SDP_Solver_Parameters &paramete
 			  if (i != dobj_list.size() - 1) std::cout << ",";
 		  }
 		  std::cout << "}\n";
-		  std::cout << "[SDPDReturnEnd.Gradient]\n";
+		  std::cout << "[SDPDReturnEnd.Linear]\n";
 
 		  std::cout << "[SDPDReturnBegin.Quadratic]\n";
 		  std::cout << "{\n";
