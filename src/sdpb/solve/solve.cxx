@@ -106,7 +106,7 @@ El::BigFloat compute_xBy(const Block_Info &block_info, const SDP &sdp,
 
 
 
-El::BigFloat compute_hessian_component(const SDP &sdp, const SDP &dsdp, const DSDPSOLUTION & sol, const SDP_Solver & solver, const Block_Info &block_info)
+El::BigFloat compute_quadratic_component(const SDP &sdp, const SDP &dsdp, const DSDPSOLUTION & sol, const SDP_Solver & solver, const Block_Info &block_info)
 {
 
 	El::BigFloat db_dy;
@@ -120,8 +120,6 @@ El::BigFloat compute_hessian_component(const SDP &sdp, const SDP &dsdp, const DS
 	El::BigFloat x_dB_dy = compute_xBy(block_info, dsdp, solver.x, sol.dy);
 
 	El::BigFloat dx_dB_y = compute_xBy(block_info, dsdp, sol.dx, solver.y);
-
-	El::BigFloat dx_B_dy = compute_xBy(block_info, sdp, sol.dx, sol.dy);
         
 	// if (El::mpi::Rank() == 0)
 	// {
@@ -130,10 +128,9 @@ El::BigFloat compute_hessian_component(const SDP &sdp, const SDP &dsdp, const DS
         //   std::cout << El::mpi::Rank() << " dc_dx  = " << dc_dx << "\n";
         //   std::cout << El::mpi::Rank() << " dx_dB_y = " << dx_dB_y << "\n";
         //   std::cout << El::mpi::Rank() << " x_dB_dy = " << x_dB_dy << "\n";
-        //   std::cout << El::mpi::Rank() << " dx_B_dy = " << dx_B_dy << "\n";
 	// }
 
-	El::BigFloat rslt = db_dy + dc_dx - dx_dB_y - x_dB_dy;
+	El::BigFloat rslt = (db_dy + dc_dx - dx_dB_y - x_dB_dy)/2;
 
 	return rslt;
 }
@@ -182,7 +179,10 @@ El::BigFloat compute_derivative_Balt_formula(SDP & dsdp, SDP_Solver & solver, co
 
 	El::BigFloat dprimalobj_Balt = dot(dsdp.primal_objective_c, solver.x) + dby - xdBy;
 
-	return dprimalobj_Balt;
+        // The minus sign is because (db,dc,dB) in the dsdp are minus
+        // what they are in the notes. This should really be changed
+        // so that no minus sign here is necessary.
+	return -dprimalobj_Balt;
 }
 
 int compute_gradient(std::vector<El::BigFloat> & dobj_list, std::vector<SDP*> & dsdp_list, SDP_Solver & solver, const Block_Info &block_info)
@@ -194,16 +194,16 @@ int compute_gradient(std::vector<El::BigFloat> & dobj_list, std::vector<SDP*> & 
 	return 1;
 }
 
-int compute_hessian(std::vector<std::vector<El::BigFloat>> & hessian, const SDP &sdp, const std::vector<SDP*> & dsdp_list, const SDP_Solver & solver, const Block_Info &block_info)
+int compute_quadratic(std::vector<std::vector<El::BigFloat>> & quadratic, const SDP &sdp, const std::vector<SDP*> & dsdp_list, const SDP_Solver & solver, const Block_Info &block_info)
 {
 	for (int i = 0; i < dsdp_list.size(); i++)
 	{
 		std::vector<El::BigFloat> vec;
 		for (int j = 0; j < dsdp_list.size(); j++)
 		{
-                  vec.push_back(compute_hessian_component(sdp, *dsdp_list[i], *solver.dsdp_sol_list[j], solver, block_info));
+                  vec.push_back(compute_quadratic_component(sdp, *dsdp_list[i], *solver.dsdp_sol_list[j], solver, block_info));
 		}
-		hessian.push_back(vec);
+		quadratic.push_back(vec);
 	}
 	return 1;
 }
@@ -221,8 +221,6 @@ Timers solve(const Block_Info &block_info, const SDP_Solver_Parameters &paramete
 
   initialize_dsdp(sdp, dsdp_list, block_info, grid, parameters);
 
-  //if (El::mpi::Rank() == 0) std::cout << "test A\n";
-
   SDP_Solver solver(parameters, block_info, grid,
                     sdp.dual_objective_b.Height());
 
@@ -232,29 +230,9 @@ Timers solve(const Block_Info &block_info, const SDP_Solver_Parameters &paramete
   SDP_Solver_Terminate_Reason reason
     = solver.run(parameters, block_info, sdp, dsdp_list, grid, timers);
 
-  std::vector<std::vector<El::BigFloat>> hessian;
+  std::vector<std::vector<El::BigFloat>> quadratic;
 
-  compute_hessian(hessian, sdp, dsdp_list, solver, block_info);
-
-  El::BigFloat sdpd_cdx = dot(sdp.primal_objective_c, solver.dsdp_sol_list[0]->dx);
-  El::BigFloat sdpd_dcx = dsdp_list[0]->objective_const + dot(dsdp_list[0]->primal_objective_c, solver.x);
-  El::BigFloat dprimalobj = sdp.objective_const + dot(sdp.primal_objective_c, solver.dsdp_sol_list[0]->dx);
-
-  El::BigFloat sdpd_bdy;
-  if (!solver.dsdp_sol_list[0]->dy.blocks.empty())
-  {
-	  sdpd_bdy = El::Dotu(sdp.dual_objective_b, solver.dsdp_sol_list[0]->dy.blocks.front());
-  }
-
-  El::BigFloat sdpd_dby;
-  if (!solver.y.blocks.empty())
-  {
-	  sdpd_dby = dsdp_list[0]->objective_const + El::Dotu(dsdp_list[0]->dual_objective_b, solver.y.blocks.front());
-  }
-
-  El::BigFloat xdBy = compute_xBy(block_info, *dsdp_list[0], solver.x, solver.y);
-
-  El::BigFloat dprimalobj_Balt = dot(dsdp_list[0]->primal_objective_c, solver.x) + sdpd_dby - xdBy;
+  compute_quadratic(quadratic, sdp, dsdp_list, solver, block_info);
 
   if(parameters.verbosity >= Verbosity::regular && El::mpi::Rank() == 0)
     {
@@ -272,60 +250,23 @@ Timers solve(const Block_Info &block_info, const SDP_Solver_Parameters &paramete
 		  std::cout << "}\n";
 		  std::cout << "[SDPDReturnEnd.Gradient]\n";
 
-		  std::cout << "[SDPDReturnBegin.Hessian]\n";
+		  std::cout << "[SDPDReturnBegin.Quadratic]\n";
 		  std::cout << "{\n";
 		  for (int i = 0; i < dsdp_list.size(); i++)
 		  {
 			  std::cout << "{\n";
 			  for (int j = 0; j < dsdp_list.size(); j++)
 			  {
-				  std::cout << hessian[i][j];
+				  std::cout << quadratic[i][j];
 				  if (j != dsdp_list.size() - 1) std::cout << ",";
 			  }
 			  std::cout << "}\n";
 			  if (i != dsdp_list.size() - 1) std::cout << ",";
 		  }
 		  std::cout << "}\n";
-		  std::cout << "[SDPDReturnEnd.Hessian]\n";
+		  std::cout << "[SDPDReturnEnd.Quadratic]\n";
 
-		  /*
-		  std::cout << El::mpi::Rank() << " dsdp.objective_const= " << dsdp_list[0]->objective_const << "\n";
-		  std::cout << El::mpi::Rank() << " sdp.objective_const= " << sdp.objective_const << "\n";
-
-		  std::cout << El::mpi::Rank() << " dc.x= " << sdpd_dcx << "\n";
-		  std::cout << El::mpi::Rank() << " c.dx= " << sdpd_cdx << "\n";
-		  std::cout << El::mpi::Rank() << " d(c.x)= " << sdpd_cdx + sdpd_dcx << "\n";
-
-		  std::cout << El::mpi::Rank() << " b.dy= " << sdpd_bdy << "\n";
-		  std::cout << El::mpi::Rank() << " db.y= " << sdpd_dby << "\n";
-		  std::cout << El::mpi::Rank() << " d(b.y)= " << sdpd_bdy + sdpd_dby << "\n";
-
-		  std::cout << El::mpi::Rank() << " -x.dB.y= " << -xdBy << "\n";
-
-		  std::cout << El::mpi::Rank() << " dc.x+db.y-x.dB.y= " << dprimalobj_Balt << "\n";
-		  */
-		  std::cout << "[SDPDReturnBegin.Gradient.NingFormula.Primal]" << sdpd_cdx + sdpd_dcx << "[SDPDReturnEnd.Gradient.NingFormula.Primal]\n";
-		  std::cout << "[SDPDReturnBegin.Gradient.NingFormula.Dual]" << sdpd_bdy + sdpd_dby << "[SDPDReturnEnd.Gradient.NingFormula.Dual]\n";
-
-		  std::cout << "[SDPDReturnBegin]" << sdpd_cdx + sdpd_dcx << "[SDPDReturnEnd]\n";
 	  }
-	  else
-	  {
-		  std::cout << El::mpi::Rank() << " dprimalobj= " << dprimalobj << "\n";
-
-		  std::cout << "[SDPDReturnBegin]" << dprimalobj << "[SDPDReturnEnd]\n";
-	  }
-
-	  /*
-      std::cout //<< "-----" << reason << "-----\n"
-                << '\n'
-                << "primalObjective = " << solver.primal_objective << '\n'
-                << "dualObjective   = " << solver.dual_objective << '\n'
-                << "dualityGap      = " << solver.duality_gap << '\n'
-                << "primalError     = " << solver.primal_error() << '\n'
-                << "dualError       = " << solver.dual_error << '\n'
-                << '\n';
-				*/
     }
 
   if (!parameters.no_final_checkpoint)
@@ -335,12 +276,6 @@ Timers solve(const Block_Info &block_info, const SDP_Solver_Parameters &paramete
 		  block_info.block_indices,
 		  parameters.verbosity);
   }
-
-  /*
-  if(!parameters.no_final_checkpoint)
-    {
-      solver.save_checkpoint(parameters);
-    }*/
 
   return timers;
 }
