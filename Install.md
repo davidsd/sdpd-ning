@@ -38,6 +38,8 @@ On the Caltech cluster, I use following commands to build sdpd
         
         cd ../..
         git clone https://github.com/Tencent/rapidjson.git
+        mkdir -p /central/groups/dssimmon/ning/packages/rapidjson
+        cp -a rapidjson/include /central/groups/dssimmon/ning/packages/rapidjson
 
         git clone https://github.com/suning1985/sdpb.git
         cd sdpb

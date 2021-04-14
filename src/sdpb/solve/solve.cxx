@@ -106,31 +106,34 @@ El::BigFloat compute_xBy(const Block_Info &block_info, const SDP &sdp,
 
 
 
-El::BigFloat compute_hessian_component(const SDP &dsdp, const DSDPSOLUTION & sol, const SDP_Solver & solver, const Block_Info &block_info)
+El::BigFloat compute_hessian_component(const SDP &sdp, const SDP &dsdp, const DSDPSOLUTION & sol, const SDP_Solver & solver, const Block_Info &block_info)
 {
 
-	El::BigFloat dbdy;
+	El::BigFloat db_dy;
 	if (!sol.dy.blocks.empty())
 	{
-		dbdy = El::Dotu(dsdp.dual_objective_b, sol.dy.blocks.front());
+		db_dy = El::Dotu(dsdp.dual_objective_b, sol.dy.blocks.front());
 	}
 
-	El::BigFloat dcdx = dot(dsdp.primal_objective_c, sol.dx);
+	El::BigFloat dc_dx = dot(dsdp.primal_objective_c, sol.dx);
 
-	El::BigFloat dxdBy = compute_xBy(block_info, dsdp, sol.dx, solver.y);
+	El::BigFloat x_dB_dy = compute_xBy(block_info, dsdp, solver.x, sol.dy);
 
-	El::BigFloat xdBdy = compute_xBy(block_info, dsdp, solver.x, sol.dy);
+	El::BigFloat dx_dB_y = compute_xBy(block_info, dsdp, sol.dx, solver.y);
 
-	/*
-	if (El::mpi::Rank() == 0)
-	{
-		std::cout << El::mpi::Rank() << " dbdy= " << dbdy << "\n";
-		std::cout << El::mpi::Rank() << " dcdx= " << dcdx << "\n";
-		std::cout << El::mpi::Rank() << " dxdBy= " << dxdBy << "\n";
-		std::cout << El::mpi::Rank() << " xdBdy= " << xdBdy << "\n";
-	}*/
+	El::BigFloat dx_B_dy = compute_xBy(block_info, sdp, sol.dx, sol.dy);
+        
+	// if (El::mpi::Rank() == 0)
+	// {
+        //   set_stream_precision(std::cout);
+        //   std::cout << El::mpi::Rank() << " db_dy  = " << db_dy << "\n";
+        //   std::cout << El::mpi::Rank() << " dc_dx  = " << dc_dx << "\n";
+        //   std::cout << El::mpi::Rank() << " dx_dB_y = " << dx_dB_y << "\n";
+        //   std::cout << El::mpi::Rank() << " x_dB_dy = " << x_dB_dy << "\n";
+        //   std::cout << El::mpi::Rank() << " dx_B_dy = " << dx_B_dy << "\n";
+	// }
 
-	El::BigFloat rslt = 2*dbdy + dcdx - dxdBy - xdBdy;
+	El::BigFloat rslt = db_dy + dc_dx - dx_dB_y - x_dB_dy;
 
 	return rslt;
 }
@@ -191,14 +194,14 @@ int compute_gradient(std::vector<El::BigFloat> & dobj_list, std::vector<SDP*> & 
 	return 1;
 }
 
-int compute_hessian(std::vector<std::vector<El::BigFloat>> & hessian, const std::vector<SDP*> & dsdp_list, const SDP_Solver & solver, const Block_Info &block_info)
+int compute_hessian(std::vector<std::vector<El::BigFloat>> & hessian, const SDP &sdp, const std::vector<SDP*> & dsdp_list, const SDP_Solver & solver, const Block_Info &block_info)
 {
 	for (int i = 0; i < dsdp_list.size(); i++)
 	{
 		std::vector<El::BigFloat> vec;
 		for (int j = 0; j < dsdp_list.size(); j++)
 		{
-			vec.push_back(compute_hessian_component(*dsdp_list[i], *solver.dsdp_sol_list[j], solver, block_info));
+                  vec.push_back(compute_hessian_component(sdp, *dsdp_list[i], *solver.dsdp_sol_list[j], solver, block_info));
 		}
 		hessian.push_back(vec);
 	}
@@ -231,7 +234,7 @@ Timers solve(const Block_Info &block_info, const SDP_Solver_Parameters &paramete
 
   std::vector<std::vector<El::BigFloat>> hessian;
 
-  compute_hessian(hessian, dsdp_list, solver, block_info);
+  compute_hessian(hessian, sdp, dsdp_list, solver, block_info);
 
   El::BigFloat sdpd_cdx = dot(sdp.primal_objective_c, solver.dsdp_sol_list[0]->dx);
   El::BigFloat sdpd_dcx = dsdp_list[0]->objective_const + dot(dsdp_list[0]->primal_objective_c, solver.x);

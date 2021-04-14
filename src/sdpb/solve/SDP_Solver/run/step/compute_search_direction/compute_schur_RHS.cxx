@@ -126,7 +126,7 @@ void compute_schur_RHS_dBbc(const Block_Info &block_info, const SDP &sdp,
 		Axpy(El::BigFloat(1), *primal_objective_c_block, *dx_block);
 		// dx *= -1
 		*dx_block *= El::BigFloat(-1);
-		*dx_block *= 0;
+		// *dx_block *= 0;
 
 		++primal_objective_c_block;
 		++y_block;
